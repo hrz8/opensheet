@@ -106,7 +106,7 @@ app.get("/:id/:sheet", async (req, res) => {
   );
 });
 
-app.listen(PORT, () => console.log(`http://localhost:${PORT}`));
+app.listen(process.env.PORT || PORT, () => console.log(`http://localhost:${PORT}`));
 
 // Avoid a single error from crashing the server in production.
 process.on("uncaughtException", (...args) => console.error(args));
