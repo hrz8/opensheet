@@ -46,7 +46,9 @@ app.get("/:id/:sheet", async (req, res) => {
 
   const cacheKey = `${id}--${sheet}`;
   if (Cache.has(cacheKey)) {
-    return res.json(JSON.parse(Cache.get(cacheKey)));
+    const result = Cache.get(cacheKey);
+    console.info(`[CACHED] responding thru cache: ${result}`);
+    return res.json(JSON.parse(result));
   }
 
   if (!isNaN(sheet)) {
@@ -101,9 +103,22 @@ app.get("/:id/:sheet", async (req, res) => {
         Cache.delete(cacheKey);
       }, 300000);
 
+      console.info(`[FRESHED] responding directly from sheets: ${JSON.stringify(rows)}`);
       return res.json(rows);
     }
   );
+});
+
+app.delete("/cache/:id", async (req, res) => {
+  let { id: cacheKey } = req.params;
+  const exist = Cache.get(cacheKey);
+  if (!exist) {
+    console.info(`[SKIPPED] no cache with key: ${cacheKey}`);
+    return res.json({status: 'skipped'});
+  }
+  Cache.delete(cacheKey);
+  console.info(`[DELETED] manually clear the cache with key: ${cacheKey}`);
+  return res.json({status: 'ok'});
 });
 
 app.listen(process.env.PORT || PORT, () => console.log(`http://localhost:${PORT}`));
