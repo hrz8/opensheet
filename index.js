@@ -158,6 +158,11 @@ app.post("/:id/:sheet", async (req, res) => {
         return res.status(400).json({ error: error.response.data.error.message });
       }
 
+      const cacheKey = `${id}--${sheet}`;
+      if (Cache.has(cacheKey)) {
+        Cache.delete(cacheKey);
+      }
+
       return res.json(result.data);
     }
   )
