@@ -114,6 +114,7 @@ app.get("/:id/:sheet", async (req, res) => {
 
       Cache.set(cacheKey, JSON.stringify(rows));
       setTimeout(() => {
+        console.info(`[SCHEDULED] delete cache with key: ${cacheKey}`);
         Cache.delete(cacheKey);
       }, 300000);
 
@@ -160,6 +161,7 @@ app.post("/:id/:sheet", async (req, res) => {
 
       const cacheKey = `${id}--${sheet}`;
       if (Cache.has(cacheKey)) {
+        console.info(`[UPDATED] delete cache with key: ${cacheKey}`);
         Cache.delete(cacheKey);
       }
 
