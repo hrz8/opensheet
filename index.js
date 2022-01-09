@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require("express");
 const app = express();
 
@@ -87,7 +88,7 @@ app.get("/:id/:sheet", async (req, res) => {
   );
 });
 
-app.listen(3000, () => console.log("http://localhost:3000"));
+app.listen(3009, () => console.log("http://localhost:3009"));
 
 // Avoid a single error from crashing the server in production.
 process.on("uncaughtException", (...args) => console.error(args));
