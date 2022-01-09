@@ -1,15 +1,23 @@
 require('dotenv').config();
 const env = require('env-var');
 
+// - ENVS
 const APP_PORT = env.get('APP_PORT').default(3001).asInt();
 const USE_WHITELIST = env.get('USE_WHITELIST').default('false').asBool();
 const WHITELIST_ORIGIN = env.get('WHITELIST_ORIGIN').asString();
 const GOOGLE_SERVICE_ACCOUNT = env.get('GOOGLE_SERVICE_ACCOUNT').required().asString();
 const GOOGLE_SERVICE_MODE = env.get('GOOGLE_SERVICE_MODE').default('spreadsheets.readonly').asString();
 
+// - CACHE
+const ONE_SECOND = 1000
+const ONE_MINUTE = ONE_SECOND * 60
+const Cache = new Map();
+
+// - EXPRESS
 const express = require("express");
 const app = express();
 
+// - GOOGLE SERVICE
 const { google } = require("googleapis");
 const auth = new google.auth.GoogleAuth({
   credentials: JSON.parse(GOOGLE_SERVICE_ACCOUNT),
@@ -17,8 +25,7 @@ const auth = new google.auth.GoogleAuth({
 });
 const sheets = google.sheets({ version: "v4", auth });
 
-const Cache = new Map();
-
+// - HELPERS
 const validateSheetId = async (sheet) => {
   if (!isNaN(sheet)) {
     // if sheetId is number
@@ -46,12 +53,11 @@ const validateSheetId = async (sheet) => {
   }
 }
 
+// - MIDDLEWARE
 app.use(
   require("morgan")(":method :url :status - :response-time ms (via :referrer)")
 );
-
 app.use(express.json());
-
 app.use(require("cors")((req, callback) => {
   let opts;
   const origin = req.headers.origin;
@@ -64,6 +70,7 @@ app.use(require("cors")((req, callback) => {
   callback(null, opts);
 }));
 
+// - ENDPOINTS
 app.get("/", async (req, res) => {
   res.redirect("https://github.com/hrz8/opensheet#readme");
 });
@@ -116,7 +123,7 @@ app.get("/:id/:sheet", async (req, res) => {
       setTimeout(() => {
         console.info(`[SCHEDULED] delete cache with key: ${cacheKey}`);
         Cache.delete(cacheKey);
-      }, 300000);
+      }, 7 * ONE_MINUTE);
 
       console.info(`[FRESHED] responding directly from sheets: ${JSON.stringify(rows)}`);
       return res.json(rows);
@@ -182,6 +189,7 @@ app.delete("/cache/:id", async (req, res) => {
   return res.json({status: 'ok'});
 });
 
+// - APP START
 app.listen(process.env.PORT || APP_PORT, () => console.log(`http://localhost:${APP_PORT}`));
 
 // Avoid a single error from crashing the server in production.
