@@ -1,10 +1,11 @@
 require('dotenv').config();
+const env = require('env-var');
 const express = require("express");
 const app = express();
 
 const { google } = require("googleapis");
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
+  credentials: JSON.parse(env.get('GOOGLE_SERVICE_ACCOUNT').required()),
   scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
 });
 const sheets = google.sheets({ version: "v4", auth });
