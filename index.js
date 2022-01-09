@@ -3,27 +3,12 @@ const app = express();
 
 const { google } = require("googleapis");
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT), // Added in Railway
+  credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
   scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
 });
 const sheets = google.sheets({ version: "v4", auth });
 
-const { createClient } = require("redis");
-let redis = {
-  exists: () => false,
-  set: () => null,
-};
-(async () => {
-  if (process.env.REDIS_URL) {
-    redis = createClient({ url: process.env.REDIS_URL });
-    await redis.connect();
-    console.log("Connected to Redis");
-  } else {
-    console.log(
-      "No Redis URL found (no process.env.REDIS_URL), so no caching will be done"
-    );
-  }
-})();
+const Cache = new Map();
 
 app.use(
   require("morgan")(":method :url :status - :response-time ms (via :referrer)")
@@ -31,7 +16,7 @@ app.use(
 app.use(require("cors")());
 
 app.get("/", async (req, res) => {
-  res.redirect("https://github.com/benborgers/opensheet#readme");
+  res.redirect("https://github.com/hrz8/opensheet#readme");
 });
 
 app.get("/:id/:sheet", async (req, res) => {
@@ -41,8 +26,8 @@ app.get("/:id/:sheet", async (req, res) => {
   sheet = sheet.replace(/\+/g, " ");
 
   const cacheKey = `${id}--${sheet}`;
-  if (await redis.exists(cacheKey)) {
-    return res.json(JSON.parse(await redis.get(cacheKey)));
+  if (Cache.has(cacheKey)) {
+    return res.json(JSON.parse(Cache.get(cacheKey)));
   }
 
   if (!isNaN(sheet)) {
@@ -92,9 +77,10 @@ app.get("/:id/:sheet", async (req, res) => {
         rows.push(rowData);
       });
 
-      await redis.set(cacheKey, JSON.stringify(rows), {
-        EX: 30, // Cache for 30 seconds
-      });
+      Cache.set(cacheKey, JSON.stringify(rows));
+      setTimeout(() => {
+        Cache.delete(cacheKey);
+      }, 30000);
 
       return res.json(rows);
     }
