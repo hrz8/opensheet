@@ -3,9 +3,11 @@ const env = require('env-var');
 const express = require("express");
 const app = express();
 
+const PORT = env.get('APP_PORT').default(3001).asInt();
+
 const { google } = require("googleapis");
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(env.get('GOOGLE_SERVICE_ACCOUNT').required()),
+  credentials: JSON.parse(env.get('GOOGLE_SERVICE_ACCOUNT').required().asString()),
   scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
 });
 const sheets = google.sheets({ version: "v4", auth });
@@ -15,7 +17,22 @@ const Cache = new Map();
 app.use(
   require("morgan")(":method :url :status - :response-time ms (via :referrer)")
 );
-app.use(require("cors")());
+
+const corsOptions = function (req, callback) {
+  let opts;
+  const origin = req.headers.origin;
+
+  const useWhitelist = env.get('USE_WHITELIST').default('false').asBool();
+  const whitelistUrls = env.get('WHITELIST_ORIGIN').asString().split(',');
+
+  if (whitelistUrls.indexOf(origin) !== -1 || !useWhitelist) {
+    opts = { origin: true };
+  } else {
+    opts = { origin: false };
+  }
+  callback(null, opts);
+}
+app.use(require("cors")(corsOptions));
 
 app.get("/", async (req, res) => {
   res.redirect("https://github.com/hrz8/opensheet#readme");
@@ -82,14 +99,14 @@ app.get("/:id/:sheet", async (req, res) => {
       Cache.set(cacheKey, JSON.stringify(rows));
       setTimeout(() => {
         Cache.delete(cacheKey);
-      }, 30000);
+      }, 300000);
 
       return res.json(rows);
     }
   );
 });
 
-app.listen(3009, () => console.log("http://localhost:3009"));
+app.listen(PORT, () => console.log(`http://localhost:${PORT}`));
 
 // Avoid a single error from crashing the server in production.
 process.on("uncaughtException", (...args) => console.error(args));
