@@ -1,38 +1,68 @@
 require('dotenv').config();
 const env = require('env-var');
+
+const APP_PORT = env.get('APP_PORT').default(3001).asInt();
+const USE_WHITELIST = env.get('USE_WHITELIST').default('false').asBool();
+const WHITELIST_ORIGIN = env.get('WHITELIST_ORIGIN').asString();
+const GOOGLE_SERVICE_ACCOUNT = env.get('GOOGLE_SERVICE_ACCOUNT').required().asString();
+const GOOGLE_SERVICE_MODE = env.get('GOOGLE_SERVICE_MODE').default('spreadsheets.readonly').asString();
+
 const express = require("express");
 const app = express();
 
-const PORT = env.get('APP_PORT').default(3001).asInt();
-
 const { google } = require("googleapis");
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(env.get('GOOGLE_SERVICE_ACCOUNT').required().asString()),
-  scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+  credentials: JSON.parse(GOOGLE_SERVICE_ACCOUNT),
+  scopes: [`https://www.googleapis.com/auth/${GOOGLE_SERVICE_MODE}`],
 });
 const sheets = google.sheets({ version: "v4", auth });
 
 const Cache = new Map();
 
+const validateSheetId = async (sheet) => {
+  if (!isNaN(sheet)) {
+    // if sheetId is number
+    let data;
+    try {
+      const response = await sheets.spreadsheets.get({
+        spreadsheetId: id,
+      });
+      data = response.data;
+    } catch (error) {
+      throw new Error(error.response.data.error.message);
+    }
+
+    if (parseInt(sheet) === 0) {
+      throw new Error("For this API, sheet numbers start at 1");
+    }
+
+    const sheetIndex = parseInt(sheet) - 1;
+
+    if (!data.sheets[sheetIndex]) {
+      throw new Error(`There is no sheet number ${sheet}`);
+    }
+
+    sheet = data.sheets[sheetIndex].properties.title;
+  }
+}
+
 app.use(
   require("morgan")(":method :url :status - :response-time ms (via :referrer)")
 );
 
-const corsOptions = function (req, callback) {
+app.use(express.json());
+
+app.use(require("cors")((req, callback) => {
   let opts;
   const origin = req.headers.origin;
-
-  const useWhitelist = env.get('USE_WHITELIST').default('false').asBool();
-  const whitelistUrls = env.get('WHITELIST_ORIGIN').asString().split(',');
-
-  if (whitelistUrls.indexOf(origin) !== -1 || !useWhitelist) {
+  const whitelistUrls = WHITELIST_ORIGIN.split(',');
+  if (whitelistUrls.indexOf(origin) !== -1 || !USE_WHITELIST) {
     opts = { origin: true };
   } else {
     opts = { origin: false };
   }
   callback(null, opts);
-}
-app.use(require("cors")(corsOptions));
+}));
 
 app.get("/", async (req, res) => {
   res.redirect("https://github.com/hrz8/opensheet#readme");
@@ -51,28 +81,12 @@ app.get("/:id/:sheet", async (req, res) => {
     return res.json(JSON.parse(result));
   }
 
-  if (!isNaN(sheet)) {
-    let data;
-    try {
-      const response = await sheets.spreadsheets.get({
-        spreadsheetId: id,
-      });
-      data = response.data;
-    } catch (error) {
-      return res.json({ error: error.response.data.error.message });
-    }
-
-    if (parseInt(sheet) === 0) {
-      return res.json({ error: "For this API, sheet numbers start at 1" });
-    }
-
-    const sheetIndex = parseInt(sheet) - 1;
-
-    if (!data.sheets[sheetIndex]) {
-      return res.json({ error: `There is no sheet number ${sheet}` });
-    }
-
-    sheet = data.sheets[sheetIndex].properties.title;
+  try {
+    validateSheetId(sheet);
+  } catch (error) {
+    console.error(`[ERROR] when validate sheetId`);
+    console.error(error);
+    return res.status(400).json({ error: error?.message || 'error' })
   }
 
   sheets.spreadsheets.values.get(
@@ -80,9 +94,9 @@ app.get("/:id/:sheet", async (req, res) => {
       spreadsheetId: id,
       range: sheet,
     },
-    async (error, result) => {
+    (error, result) => {
       if (error) {
-        return res.json({ error: error.response.data.error.message });
+        return res.status(400).json({ error: error.response.data.error.message });
       }
 
       const rows = [];
@@ -109,6 +123,46 @@ app.get("/:id/:sheet", async (req, res) => {
   );
 });
 
+app.post("/:id/:sheet", async (req, res) => {
+  let { id, sheet } = req.params;
+  // This is what Vercel does, and we want to keep this behavior
+  // even after migrating off of Vercel so there's no breaking change.
+  sheet = sheet.replace(/\+/g, " ");
+
+  const { body: payload } = req;
+
+  if (!Array.isArray(payload)) {
+    return res.status(400).json({ error: 'Payload must be array'});
+  }
+
+  try {
+    validateSheetId(sheet);
+  } catch (error) {
+    console.error(`[ERROR] when validate sheetId`);
+    console.error(error);
+    return res.status(400).json({ error: error?.message || 'error' })
+  }
+
+  sheets.spreadsheets.values.append(
+    {
+      spreadsheetId: id,
+      range: `${sheet}`,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      resource: {
+        values: [req.body]
+      }
+    },
+    (error, result) => {
+      if (error) {
+        return res.status(400).json({ error: error.response.data.error.message });
+      }
+
+      return res.json(result.data);
+    }
+  )
+});
+
 app.delete("/cache/:id", async (req, res) => {
   let { id: cacheKey } = req.params;
   const exist = Cache.get(cacheKey);
@@ -121,7 +175,7 @@ app.delete("/cache/:id", async (req, res) => {
   return res.json({status: 'ok'});
 });
 
-app.listen(process.env.PORT || PORT, () => console.log(`http://localhost:${PORT}`));
+app.listen(process.env.PORT || APP_PORT, () => console.log(`http://localhost:${APP_PORT}`));
 
 // Avoid a single error from crashing the server in production.
 process.on("uncaughtException", (...args) => console.error(args));
